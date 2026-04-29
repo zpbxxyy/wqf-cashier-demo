@@ -1,0 +1,2261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>收银台支付流程演示</title>
+<style>
+/*
+  设计系统
+  --------
+  小红书红：#FF2442  微企付蓝：#1677FF  银行绿：#07C160
+  中性色梯度：#1D2129 → #4E5969 → #86909C → #C9CDD4 → #E5E6EB → #F2F3F5 → #F7F8FA
+  风格：简洁白底 · 微信支付调性 · 零多余装饰
+*/
+:root {
+  --xhs-red: #FF2442;
+  --xhs-red-light: #FFF0F1;
+  --brand: #1677FF;
+  --brand-light: #E8F3FF;
+  --brand-dark: #0E5FCC;
+  --success: #07C160;
+  --success-light: #E8FFF0;
+  --warning: #FF6A00;
+  --danger: #F53F3F;
+  --text-1: #1D2129;
+  --text-2: #4E5969;
+  --text-3: #86909C;
+  --border: #E5E6EB;
+  --bg: #F7F8FA;
+  --white: #FFFFFF;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 2px 12px rgba(0,0,0,0.06);
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font);
+  background: #EBEDF0;
+  color: var(--text-1);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* ==================== 演示外壳 ==================== */
+.demo-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 40px;
+  min-height: 100vh;
+}
+
+.demo-title {
+  font-size: 15px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.demo-subtitle {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 20px;
+}
+
+/* 流程进度条 */
+.flow-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.flow-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+.flow-dot.active {
+  background: var(--brand);
+  color: var(--white);
+}
+.flow-dot.done {
+  background: var(--success);
+  color: var(--white);
+}
+
+.flow-label {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: 6px;
+  margin-right: 4px;
+  white-space: nowrap;
+  transition: color 0.3s;
+}
+.flow-label.active { color: var(--brand); font-weight: 600; }
+.flow-label.done { color: var(--success); }
+
+.flow-line {
+  width: 20px;
+  height: 2px;
+  background: var(--border);
+  margin: 0 4px;
+  transition: background 0.3s;
+  flex-shrink: 0;
+}
+.flow-line.done { background: var(--success); }
+
+/* 手机壳 */
+.phone-frame {
+  width: 375px;
+  min-height: 680px;
+  max-height: 780px;
+  background: var(--white);
+  border-radius: 40px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 状态栏 */
+.status-bar {
+  height: 44px;
+  padding: 12px 24px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.status-bar .time { font-variant-numeric: tabular-nums; }
+.status-bar .icons { display: flex; gap: 4px; align-items: center; }
+.status-bar .icons svg { width: 16px; height: 16px; }
+
+/* 页面容器 */
+.screen {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.screen.active { display: flex; }
+
+/* ==================== 共用组件 ==================== */
+
+.nav-bar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+  gap: 10px;
+}
+.nav-bar .back-btn {
+  width: 28px; height: 28px;
+  border: none; background: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; transition: background 0.15s;
+}
+.nav-bar .back-btn:hover { background: var(--bg); }
+.nav-bar .back-btn svg { width: 20px; height: 20px; }
+.nav-bar .nav-title { font-size: 16px; font-weight: 600; flex: 1; }
+.nav-bar .nav-right { font-size: 12px; color: var(--text-3); }
+
+.screen-body {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+/* ==================== 1. 小红书收银台 ==================== */
+
+.xhs-header {
+  background: var(--white);
+  padding: 20px 20px 16px;
+}
+.xhs-header .xhs-meta {
+  font-size: 12px;
+  color: var(--text-3);
+  display: flex;
+  gap: 16px;
+}
+.xhs-header .xhs-title-text {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-top: 12px;
+}
+.xhs-header .xhs-amount {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.xhs-header .xhs-amount .xhs-yen {
+  font-size: 20px;
+  vertical-align: 3px;
+  margin-right: 2px;
+}
+
+.xhs-divider {
+  height: 8px;
+  background: var(--bg);
+}
+
+.xhs-pay-section {
+  background: var(--white);
+  padding: 16px 20px;
+}
+.xhs-pay-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 4px;
+}
+.xhs-pay-summary {
+  font-size: 12px;
+  color: var(--text-3);
+  position: absolute;
+  right: 20px;
+  top: 16px;
+}
+.xhs-pay-section { position: relative; }
+
+.xhs-pay-options {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+}
+
+.xhs-pay-opt {
+  flex: 1;
+  min-height: 64px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--white);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-1);
+  transition: all 0.2s;
+  text-align: left;
+}
+.xhs-pay-opt:hover { border-color: #C9CDD4; background: var(--bg); }
+.xhs-pay-opt.selected {
+  border-color: var(--success);
+  background: #F0FFF5;
+  color: var(--text-1);
+}
+.xhs-pay-opt.selected .pay-opt-name { color: #07A84B; }
+.xhs-pay-opt .pay-opt-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.xhs-pay-opt .pay-opt-text { flex: 1; min-width: 0; }
+.xhs-pay-opt .pay-opt-name { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.xhs-pay-opt .pay-opt-tag { font-size: 10px; color: var(--text-3); margin-top: 2px; font-weight: 400; }
+.xhs-pay-opt svg { width: 22px; height: 22px; flex-shrink: 0; }
+
+.xhs-pay-opt.xhs-bank.selected {
+  border-color: var(--success);
+  background: #F0FFF5;
+}
+.xhs-pay-opt.xhs-bank.selected .pay-opt-name {
+  color: #07A84B;
+}
+
+.xhs-countdown {
+  text-align: center;
+  padding: 16px 0;
+  font-size: 12px;
+  color: var(--text-3);
+  background: var(--white);
+}
+.xhs-countdown .xhs-time {
+  color: var(--brand);
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
+.xhs-confirm-btn {
+  margin: 16px 20px;
+  height: 48px;
+  border-radius: 10px;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  width: calc(100% - 40px);
+  transition: all 0.15s;
+}
+.xhs-confirm-btn.wqf-btn {
+  background: var(--success);
+  color: var(--white);
+}
+.xhs-confirm-btn.wqf-btn:hover { background: #06A24E; }
+.xhs-confirm-btn.bank-btn {
+  background: var(--success);
+  color: var(--white);
+}
+.xhs-confirm-btn.bank-btn:hover { background: #06A24E; }
+.xhs-confirm-btn:active { transform: scale(0.98); }
+
+.xhs-footer {
+  padding: 12px 20px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+}
+.xhs-footer svg { width: 20px; height: 20px; }
+.xhs-footer span { font-size: 13px; color: var(--text-3); font-weight: 500; }
+
+/* ==================== 2. 微企付二维码页 ==================== */
+
+.qr-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 20px;
+  background: var(--white);
+}
+.qr-amount {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.qr-amount .qr-yen { font-size: 18px; vertical-align: 3px; margin-right: 2px; }
+.qr-merchant { font-size: 13px; color: var(--text-3); margin-top: 4px; margin-bottom: 24px; }
+
+.qr-box {
+  width: 200px;
+  height: 200px;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.qr-box:hover { transform: scale(1.02); }
+.qr-box:active { transform: scale(0.98); }
+.qr-box canvas {
+  width: 200px;
+  height: 200px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.qr-box .qr-center-logo {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px; height: 40px;
+  background: var(--white);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+.qr-box .qr-center-logo svg { width: 26px; height: 26px; }
+
+/* 点击提示浮层 */
+.qr-tap-hint {
+  position: absolute;
+  inset: 0;
+  background: rgba(22,119,255,0.08);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: hintPulse 2s infinite;
+}
+.qr-tap-hint span {
+  background: var(--brand);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(22,119,255,0.3);
+}
+@keyframes hintPulse {
+  0%,100% { background: rgba(22,119,255,0.04); }
+  50% { background: rgba(22,119,255,0.12); }
+}
+
+.qr-tip {
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--text-2);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qr-tip svg { width: 18px; height: 18px; color: var(--brand); }
+
+.qr-timer {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.qr-timer .qr-time { color: var(--warning); font-weight: 600; font-family: var(--mono); }
+
+.qr-steps {
+  width: 100%;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--border);
+}
+.qr-steps-label {
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  margin-bottom: 14px;
+}
+.steps-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+}
+.step-i {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 70px;
+}
+.step-i .step-n {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--brand-light);
+  color: var(--brand);
+  font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.step-i .step-n.done-step {
+  background: var(--success-light);
+  color: var(--success);
+}
+.step-i .step-t { font-size: 11px; color: var(--text-2); text-align: center; line-height: 1.3; }
+.step-arr { width: 16px; height: 16px; color: var(--text-3); margin-top: 4px; flex-shrink: 0; }
+
+/* ==================== 3. 微企付 APP 收银台 ==================== */
+
+.app-cashier {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.app-card {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.app-merchant-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.app-merchant-logo {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1677FF, #36A3FF);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--white); font-size: 14px; font-weight: 700;
+}
+.app-merchant-name { font-size: 15px; font-weight: 600; }
+.app-merchant-desc { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+.app-amount-area {
+  text-align: center;
+  padding: 24px 0 12px;
+}
+.app-amount-label { font-size: 13px; color: var(--text-3); }
+.app-amount-num {
+  font-size: 38px;
+  font-weight: 700;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.app-amount-num .app-yen { font-size: 20px; vertical-align: 4px; margin-right: 2px; }
+
+.app-pay-method {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 0;
+  box-shadow: var(--shadow);
+}
+.app-method-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.app-method-item:hover { background: var(--bg); }
+.app-method-item + .app-method-item { border-top: 0.5px solid var(--border); }
+.app-method-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.app-method-icon.icbc { background: #FFF0E0; }
+.app-method-icon.cmb { background: #FFF0F0; }
+.app-method-icon svg { width: 22px; height: 22px; }
+.app-method-info { flex: 1; }
+.app-method-name { font-size: 14px; font-weight: 500; }
+.app-method-desc { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.app-method-radio {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  position: relative;
+  transition: all 0.2s;
+}
+.app-method-radio.checked {
+  border-color: var(--brand);
+}
+.app-method-radio.checked::after {
+  content: '';
+  width: 10px; height: 10px;
+  background: var(--brand);
+  border-radius: 50%;
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.app-confirm-btn {
+  margin: 20px 16px;
+  height: 48px;
+  border-radius: 10px;
+  border: none;
+  background: var(--brand);
+  color: var(--white);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  width: calc(100% - 32px);
+  transition: all 0.15s;
+}
+.app-confirm-btn:hover { background: var(--brand-dark); }
+.app-confirm-btn:active { transform: scale(0.98); }
+
+.app-secure {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+  padding-bottom: 16px;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.app-secure svg { width: 14px; height: 14px; }
+
+/* ==================== 4. 银行 APP 支付确认 ==================== */
+
+.bank-app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.bank-app-card {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 24px 20px;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.bank-payee-label { font-size: 13px; color: var(--text-3); }
+.bank-payee-name { font-size: 16px; font-weight: 600; margin-top: 4px; }
+.bank-app-amount {
+  font-size: 42px;
+  font-weight: 700;
+  margin: 16px 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+.bank-app-amount .bank-yen { font-size: 22px; vertical-align: 5px; margin-right: 2px; }
+
+.bank-detail-card {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: var(--shadow);
+}
+.bank-d-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+.bank-d-row + .bank-d-row { border-top: 0.5px solid var(--border); }
+.bank-d-label { font-size: 13px; color: var(--text-3); }
+.bank-d-value { font-size: 13px; color: var(--text-1); font-weight: 500; text-align: right; }
+
+.bank-pay-btn {
+  margin: 24px 16px 12px;
+  height: 48px;
+  border-radius: 10px;
+  border: none;
+  background: #D4000E;
+  color: var(--white);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  width: calc(100% - 32px);
+  transition: all 0.15s;
+}
+.bank-pay-btn:hover { background: #B8000C; }
+.bank-pay-btn:active { transform: scale(0.98); }
+
+.bank-pwd-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+  padding-bottom: 16px;
+}
+
+/* ==================== 5. 支付成功 ==================== */
+
+.success-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--white);
+  padding: 40px 20px;
+}
+.success-icon {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: var(--success);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 20px;
+  animation: successPop 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.success-icon svg { width: 36px; height: 36px; color: var(--white); }
+@keyframes successPop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+.success-title { font-size: 20px; font-weight: 700; color: var(--text-1); }
+.success-amount {
+  font-size: 32px; font-weight: 700;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.success-amount .s-yen { font-size: 18px; vertical-align: 3px; margin-right: 2px; }
+.success-merchant { font-size: 13px; color: var(--text-3); margin-top: 6px; }
+.success-done-btn {
+  margin-top: 36px;
+  height: 44px;
+  padding: 0 48px;
+  border-radius: 22px;
+  border: 1.5px solid var(--brand);
+  background: var(--white);
+  color: var(--brand);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.success-done-btn:hover { background: var(--brand-light); }
+
+/* ==================== 6. 对公转账 ==================== */
+
+.bank-transfer {
+  flex: 1;
+  background: var(--bg);
+  overflow-y: auto;
+}
+.bt-notice {
+  background: #FFF8E8;
+  margin: 12px 16px 0;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.bt-notice svg { width: 16px; height: 16px; color: var(--warning); flex-shrink: 0; margin-top: 1px; }
+.bt-notice-text { font-size: 12px; color: #8B6914; line-height: 1.6; }
+
+.bt-amount-card {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.bt-amount-label { font-size: 13px; color: var(--text-3); }
+.bt-amount-val {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.bt-amount-val .bt-yen { font-size: 18px; vertical-align: 4px; margin-right: 2px; }
+
+.bt-info-card {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 4px 16px;
+  box-shadow: var(--shadow);
+}
+.bt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0;
+}
+.bt-row + .bt-row { border-top: 0.5px solid var(--border); }
+.bt-label { font-size: 12px; color: var(--text-3); flex-shrink: 0; width: 60px; }
+.bt-val-group { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; }
+.bt-val { font-size: 13px; color: var(--text-1); font-weight: 500; text-align: right; word-break: break-all; }
+.bt-val.mono { font-family: var(--mono); letter-spacing: 0.5px; }
+.bt-copy {
+  font-size: 11px;
+  color: var(--brand);
+  background: var(--brand-light);
+  border: none;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  font-family: var(--font);
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.bt-copy:hover { background: #D0E5FF; }
+.bt-copy.copied { background: var(--success-light); color: var(--success); }
+
+.bt-copy-all {
+  margin: 16px 16px 8px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1.5px solid var(--brand);
+  background: var(--white);
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  width: calc(100% - 32px);
+  transition: all 0.15s;
+}
+.bt-copy-all:hover { background: var(--brand-light); }
+
+.bt-notes {
+  margin: 12px 16px;
+  padding: 0 4px;
+}
+.bt-note {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.8;
+  padding-left: 10px;
+  position: relative;
+}
+.bt-note::before {
+  content: '';
+  width: 3px; height: 3px;
+  background: var(--text-3);
+  border-radius: 50%;
+  position: absolute;
+  left: 0; top: 7px;
+}
+
+/* ==================== 7. 企业手机银行转账动效 ==================== */
+
+.ebank-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #F5F5F5;
+  overflow: hidden;
+}
+
+.ebank-form {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 0 16px;
+  box-shadow: var(--shadow);
+}
+
+.ebank-field {
+  padding: 14px 0;
+  border-bottom: 0.5px solid var(--border);
+}
+.ebank-field:last-child { border-bottom: none; }
+.ebank-field-label {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.ebank-field-input {
+  font-size: 15px;
+  color: var(--text-1);
+  font-weight: 500;
+  min-height: 24px;
+  font-family: var(--font);
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ebank-field-input.mono {
+  font-family: var(--mono);
+  letter-spacing: 0.5px;
+}
+
+/* 打字光标 */
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 18px;
+  background: var(--brand);
+  margin-left: 1px;
+  animation: cursorBlink 0.6s infinite;
+  vertical-align: middle;
+}
+@keyframes cursorBlink {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 粘贴动效 */
+.paste-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--brand);
+  background: var(--brand-light);
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.3s;
+}
+.paste-badge.show {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 密码输入点 */
+.pwd-dots {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 20px 0;
+}
+.pwd-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.2s;
+}
+.pwd-dot.filled {
+  background: var(--text-1);
+}
+
+.ebank-submit-btn {
+  margin: 20px 16px 12px;
+  height: 48px;
+  border-radius: 10px;
+  border: none;
+  background: #C92B2E;
+  color: var(--white);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font);
+  width: calc(100% - 32px);
+  opacity: 0.5;
+  transition: all 0.3s;
+}
+.ebank-submit-btn.ready {
+  opacity: 1;
+  cursor: pointer;
+}
+
+/* ==================== 8. 自动认款结果 ==================== */
+
+.verify-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--white);
+  padding: 32px 20px;
+}
+
+.verify-progress {
+  width: 100%;
+  max-width: 280px;
+  margin-top: 20px;
+}
+
+.verify-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  opacity: 0.3;
+  transition: opacity 0.5s;
+}
+.verify-step.active {
+  opacity: 1;
+}
+.verify-step.done {
+  opacity: 1;
+}
+
+.verify-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+.verify-dot.processing {
+  background: var(--brand-light);
+  border: 2px solid var(--brand);
+}
+.verify-dot.processing::after {
+  content: '';
+  width: 8px; height: 8px;
+  border: 2px solid var(--brand);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.verify-dot.ok {
+  background: var(--success);
+}
+.verify-dot.ok::after {
+  content: '✓';
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.verify-line {
+  width: 2px;
+  height: 20px;
+  background: var(--border);
+  margin-left: 11px;
+  transition: background 0.3s;
+}
+.verify-line.done {
+  background: var(--success);
+}
+
+.verify-text {
+  flex: 1;
+}
+.verify-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+.verify-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.verify-result-card {
+  background: var(--success-light);
+  border: 1px solid rgba(7,193,96,0.2);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-top: 24px;
+  width: 100%;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.5s;
+}
+.verify-result-card.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.verify-result-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.verify-result-title svg { width: 22px; height: 22px; }
+.verify-result-amount {
+  font-size: 28px;
+  font-weight: 700;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.verify-result-amount .vr-yen { font-size: 16px; vertical-align: 3px; margin-right: 2px; }
+.verify-result-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+/* 切换到银行 APP 的按钮 */
+.bt-switch-bank {
+  margin: 16px 16px 4px;
+  height: 48px;
+  border-radius: 10px;
+  border: none;
+  background: var(--success);
+  color: var(--white);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  width: calc(100% - 32px);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.bt-switch-bank:hover { background: #06A24E; }
+.bt-switch-bank:active { transform: scale(0.98); }
+.bt-switch-bank svg { width: 20px; height: 20px; }
+.bt-switch-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+
+/* 密码弹窗 */
+.pwd-modal {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: none;
+  align-items: flex-end;
+  z-index: 60;
+  border-radius: 40px;
+  overflow: hidden;
+}
+.pwd-modal.show { display: flex; }
+.pwd-sheet {
+  width: 100%;
+  background: var(--white);
+  border-radius: 16px 16px 0 0;
+  padding: 24px 20px 32px;
+  animation: slideUp 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.pwd-sheet-title {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.pwd-sheet-amount {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+/* ==================== 0. 商品下单页 ==================== */
+
+.shop-body {
+  flex: 1;
+  background: var(--bg);
+  overflow-y: auto;
+}
+.shop-product {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.shop-img {
+  width: 100%;
+  height: 180px;
+  background: linear-gradient(135deg, #E8F3FF 0%, #D6ECFF 50%, #C4E1FF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.shop-img-tag {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 11px;
+  background: var(--brand);
+  color: var(--white);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.shop-img-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(22,119,255,0.15);
+}
+.shop-detail {
+  padding: 16px;
+}
+.shop-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-1);
+  line-height: 1.4;
+}
+.shop-desc {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.shop-price-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+.shop-price {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+.shop-price .sp-yen {
+  font-size: 14px;
+  vertical-align: 2px;
+  margin-right: 1px;
+}
+.shop-sold {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.shop-specs {
+  background: var(--white);
+  margin: 12px 16px 0;
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.shop-spec-title {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-bottom: 10px;
+}
+.shop-spec-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.shop-spec-tag {
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font);
+}
+.shop-spec-tag.active {
+  border-color: var(--brand);
+  background: var(--brand-light);
+  color: var(--brand);
+  font-weight: 500;
+}
+
+.shop-buy-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--white);
+  border-top: 0.5px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.shop-total {
+  flex: 1;
+}
+.shop-total-label { font-size: 12px; color: var(--text-3); }
+.shop-total-price {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+.shop-total-price .stp-yen { font-size: 12px; vertical-align: 2px; margin-right: 1px; }
+.shop-buy-btn {
+  height: 44px;
+  padding: 0 32px;
+  border-radius: 22px;
+  border: none;
+  background: var(--brand);
+  color: var(--white);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.shop-buy-btn:hover { background: var(--brand-dark); }
+.shop-buy-btn:active { transform: scale(0.97); }
+
+/* 支付方式标签 */
+.pay-tag-sub {
+  font-size: 10px;
+  color: var(--text-3);
+  font-weight: 400;
+  margin-top: 2px;
+  letter-spacing: 0.3px;
+}
+
+/* ==================== Toast ==================== */
+.toast {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  background: rgba(0,0,0,0.75);
+  color: var(--white);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 9999;
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+
+/* ==================== 加载遮罩 ==================== */
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.9);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  border-radius: 40px;
+}
+.loading-overlay.show { display: flex; }
+.loading-spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: var(--text-2); margin-top: 12px; }
+
+/* ==================== 动画 ==================== */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.35s cubic-bezier(0.4,0,0.2,1) both; }
+
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(22,119,255,0.15); }
+  50% { box-shadow: 0 0 0 10px rgba(22,119,255,0); }
+}
+
+/* ==================== PC 适配 ==================== */
+@media (max-width: 420px) {
+  .demo-shell { padding: 0; }
+  .phone-frame {
+    width: 100%; min-height: 100vh; max-height: none;
+    border-radius: 0; box-shadow: none;
+  }
+  .demo-title, .demo-subtitle, .flow-bar { display: none; }
+  .loading-overlay { border-radius: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="demo-shell">
+  <div class="demo-title">微企付收银台 · 支付流程演示</div>
+  <div class="demo-subtitle">点击页面按钮体验完整支付链路</div>
+
+  <!-- 流程进度条 -->
+  <div class="flow-bar" id="flowBar">
+    <div class="flow-step">
+      <div class="flow-dot active" id="fd0">1</div>
+      <span class="flow-label active" id="fl0">商品下单</span>
+    </div>
+    <div class="flow-line" id="fline0"></div>
+    <div class="flow-step">
+      <div class="flow-dot" id="fd1">2</div>
+      <span class="flow-label" id="fl1">客户侧收银台</span>
+    </div>
+    <div class="flow-line" id="fline1"></div>
+    <div class="flow-step">
+      <div class="flow-dot" id="fd2">3</div>
+      <span class="flow-label" id="fl2">扫码支付</span>
+    </div>
+    <div class="flow-line" id="fline2"></div>
+    <div class="flow-step">
+      <div class="flow-dot" id="fd3">4</div>
+      <span class="flow-label" id="fl3">微企付APP</span>
+    </div>
+    <div class="flow-line" id="fline3"></div>
+    <div class="flow-step">
+      <div class="flow-dot" id="fd4">5</div>
+      <span class="flow-label" id="fl4">银行APP</span>
+    </div>
+    <div class="flow-line" id="fline4"></div>
+    <div class="flow-step">
+      <div class="flow-dot" id="fd5">6</div>
+      <span class="flow-label" id="fl5">完成</span>
+    </div>
+  </div>
+
+  <!-- 手机壳 -->
+  <div class="phone-frame" id="phone">
+    <!-- 加载遮罩 -->
+    <div class="loading-overlay" id="loading">
+      <div class="loading-spinner"></div>
+      <div class="loading-text" id="loadingText">正在跳转...</div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="status-bar">
+      <span class="time" id="statusTime">11:22</span>
+      <span class="icons">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 11.5h1.8V14H1.5zM4.6 9h1.8v5H4.6zM7.7 6.5h1.8V14H7.7zM10.8 4h1.8v10h-1.8zM13.2 1.5H15V14h-1.8z" opacity="0.3"/><path d="M1.5 11.5h1.8V14H1.5zM4.6 9h1.8v5H4.6zM7.7 6.5h1.8V14H7.7zM10.8 4h1.8v10h-1.8z"/></svg>
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.4C5.4 3.4 3.1 4.6 1.5 6.5l1.2 1.2C4 6 5.9 5 8 5s4 1 5.3 2.7l1.2-1.2C12.9 4.6 10.6 3.4 8 3.4zM8 7.4c-1.5 0-2.8.6-3.8 1.7l1.2 1.2c.7-.7 1.6-1.1 2.6-1.1s1.9.4 2.6 1.1l1.2-1.2C10.8 8 9.5 7.4 8 7.4zM8 11.4c-.6 0-1.1.2-1.5.7L8 13.5l1.5-1.5c-.4-.4-.9-.6-1.5-.6z"/></svg>
+        <svg viewBox="0 0 24 16" fill="currentColor"><rect x="0.5" y="0.5" width="20" height="11" rx="2" stroke="currentColor" fill="none" stroke-width="1"/><rect x="22" y="3.5" width="2" height="5" rx="1"/><rect x="2" y="2" width="14" height="8" rx="1" fill="var(--success)"/></svg>
+      </span>
+    </div>
+
+    <!-- ===== Screen 0: 商品下单 ===== -->
+    <div id="s0" class="screen active">
+      <div class="nav-bar">
+        <div class="nav-title" style="text-align:center;">商品详情</div>
+      </div>
+      <div class="shop-body">
+        <div class="shop-product">
+          <div class="shop-img">
+            <div class="shop-img-tag">企业服务</div>
+            <div class="shop-img-icon">
+              <img src="shop-icon.png" style="width:48px;height:48px;border-radius:12px;">
+            </div>
+          </div>
+          <div class="shop-detail">
+            <div class="shop-name">企业级内容营销合作服务</div>
+            <div class="shop-desc">包含品牌内容策划、达人匹配、投放执行、数据复盘等全链路营销服务，助力企业高效获客。</div>
+            <div class="shop-price-row">
+              <div class="shop-price"><span class="sp-yen">¥</span>12,800.00</div>
+              <div class="shop-sold">已售 326 笔</div>
+            </div>
+          </div>
+        </div>
+        <div class="shop-specs">
+          <div class="shop-spec-title">服务规格</div>
+          <div class="shop-spec-tags">
+            <button class="shop-spec-tag active">内容合作</button>
+            <button class="shop-spec-tag">品牌推广</button>
+            <button class="shop-spec-tag">效果广告</button>
+          </div>
+        </div>
+        <div class="shop-specs" style="margin-top:8px;">
+          <div class="shop-spec-title">数量</div>
+          <div style="display:flex;align-items:center;gap:16px;">
+            <div style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:16px;">−</div>
+            <span style="font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;">1</span>
+            <div style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:16px;">+</div>
+          </div>
+        </div>
+      </div>
+      <div class="shop-buy-bar">
+        <div class="shop-total">
+          <div class="shop-total-label">合计</div>
+          <div class="shop-total-price"><span class="stp-yen">¥</span>12,800.00</div>
+        </div>
+        <button class="shop-buy-btn" onclick="submitOrder()">立即购买</button>
+      </div>
+    </div>
+
+    <!-- ===== Screen 1: 客户侧收银台 ===== -->
+    <div id="s1" class="screen">
+      <div class="nav-bar">
+        <button class="back-btn" onclick="goScreen(0)"><svg viewBox="0 0 20 20" fill="none"><path d="M12.5 15.5L7 10l5.5-5.5" stroke="var(--text-1)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="nav-title" style="text-align:center;">收银台</div>
+      </div>
+      <div class="screen-body">
+        <div class="xhs-header">
+          <div class="xhs-meta">
+            <span>账号主体　深圳微企付科技有限公司</span>
+          </div>
+          <div class="xhs-meta" style="margin-top:4px;">
+            <span>账号名称　微企付测试商户</span>
+          </div>
+          <div class="xhs-title-text">内容合作</div>
+          <div class="xhs-amount"><span class="xhs-yen">¥</span> 12,800.00</div>
+        </div>
+        <div class="xhs-divider"></div>
+        <div class="xhs-pay-section">
+          <div class="xhs-pay-label">支付方式</div>
+          <div style="position:absolute;right:20px;top:16px;font-size:12px;color:var(--text-3);">
+            实付金额 <span style="font-size:16px;font-weight:700;color:var(--text-1);">12,800.00</span> 元
+          </div>
+          <div class="xhs-pay-options">
+            <button class="xhs-pay-opt selected" id="optWqf" onclick="selectPay('wqf')">
+              <img class="pay-opt-icon" src="wqf-icon.png">
+              <div class="pay-opt-text">
+                <div class="pay-opt-name">腾讯微企付</div>
+                <div class="pay-opt-tag">支持个人卡支付</div>
+              </div>
+            </button>
+            <button class="xhs-pay-opt" id="optBank" onclick="selectPay('bank')">
+              <img class="pay-opt-icon" src="wqf-icon.png">
+              <div class="pay-opt-text">
+                <div class="pay-opt-name">收款通</div>
+                <div class="pay-opt-tag">支持对公账户支付</div>
+              </div>
+            </button>
+          </div>
+        </div>
+        <div class="xhs-countdown">
+          请在 <span class="xhs-time" id="xhsCountdown">29:59</span> 内完成支付，超时订单将自动关闭
+        </div>
+        <button class="xhs-confirm-btn wqf-btn" id="xhsConfirmBtn" onclick="confirmPay()">确认支付</button>
+        <div class="xhs-footer">
+          <svg viewBox="0 0 16 16" fill="none" style="width:16px;height:16px;"><path d="M8 1.333A6.667 6.667 0 1 0 14.667 8 6.674 6.674 0 0 0 8 1.333Zm2.667 5.334-3 3a.667.667 0 0 1-.947 0l-1.387-1.334a.667.667 0 0 1 .934-.95L7.2 8.3l2.527-2.54a.667.667 0 1 1 .94.94Z" fill="#86909C"/></svg>
+          <span>客户侧收银台</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Screen 2: 微企付二维码 ===== -->
+    <div id="s2" class="screen">
+      <div class="nav-bar">
+        <button class="back-btn" onclick="goScreen(1)"><svg viewBox="0 0 20 20" fill="none"><path d="M12.5 15.5L7 10l5.5-5.5" stroke="var(--text-1)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="nav-title">腾讯微企付</div>
+        <div class="nav-right" style="display:flex;align-items:center;gap:4px;">
+          <span style="width:5px;height:5px;border-radius:50%;background:var(--success);display:inline-block;"></span>
+          等待扫码
+        </div>
+      </div>
+      <div class="qr-body">
+        <div class="qr-amount"><span class="qr-yen">¥</span>12,800.00</div>
+        <div class="qr-merchant">深圳微企付科技有限公司</div>
+        <div class="qr-box" onclick="scanQR()">
+          <canvas id="qrCanvas" width="400" height="400"></canvas>
+          <div class="qr-center-logo">
+            <img src="wqf-icon.png" style="width:28px;height:28px;border-radius:6px;">
+          </div>
+          <div class="qr-tap-hint"><span>点击模拟扫码</span></div>
+        </div>
+        <div class="qr-tip">
+          <svg viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1.2"/><path d="M9 5.5v4M9 12.5v0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          打开银行 APP 扫一扫，完成付款
+        </div>
+        <div class="qr-timer">二维码有效期 <span class="qr-time" id="qrCountdown">04:59</span></div>
+        <div class="qr-steps">
+          <div class="qr-steps-label">支付流程</div>
+          <div class="steps-row">
+            <div class="step-i"><div class="step-n">1</div><div class="step-t">扫描<br>二维码</div></div>
+            <svg class="step-arr" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="step-i"><div class="step-n">2</div><div class="step-t">跳转<br>银行APP</div></div>
+            <svg class="step-arr" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="step-i"><div class="step-n">3</div><div class="step-t">确认<br>付款</div></div>
+            <svg class="step-arr" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="step-i"><div class="step-n">4</div><div class="step-t">支付<br>完成</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Screen 3: 微企付 APP 收银台 ===== -->
+    <div id="s3" class="screen">
+      <div class="nav-bar" style="background:var(--white);">
+        <button class="back-btn" onclick="goScreen(2)"><svg viewBox="0 0 20 20" fill="none"><path d="M12.5 15.5L7 10l5.5-5.5" stroke="var(--text-1)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="nav-title">微企付收银台</div>
+      </div>
+      <div class="app-cashier">
+        <div class="app-card fade-up">
+          <div class="app-merchant-row">
+            <div class="app-merchant-logo" style="padding:0;overflow:hidden;background:none;"><img src="shop-icon.png" style="width:40px;height:40px;border-radius:10px;"></div>
+            <div>
+              <div class="app-merchant-name">深圳微企付科技有限公司</div>
+              <div class="app-merchant-desc">内容合作 · 广告投放服务费</div>
+            </div>
+          </div>
+          <div class="app-amount-area">
+            <div class="app-amount-label">支付金额</div>
+            <div class="app-amount-num"><span class="app-yen">¥</span>12,800.00</div>
+          </div>
+        </div>
+        <div class="app-pay-method fade-up" style="animation-delay:0.08s;">
+          <div class="app-method-item" onclick="selectBank('icbc')">
+            <div class="app-method-icon icbc">
+              <svg viewBox="0 0 22 22" fill="none"><rect x="3" y="5" width="16" height="12" rx="2" stroke="#C45500" stroke-width="1.4"/><path d="M3 9h16" stroke="#C45500" stroke-width="1.4"/><path d="M7 13h3" stroke="#C45500" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="app-method-info">
+              <div class="app-method-name">工商银行储蓄卡</div>
+              <div class="app-method-desc">免绑卡直接支付</div>
+            </div>
+            <div class="app-method-radio checked" id="radioIcbc"></div>
+          </div>
+          <div class="app-method-item" onclick="selectBank('cmb')">
+            <div class="app-method-icon cmb">
+              <svg viewBox="0 0 22 22" fill="none"><rect x="3" y="5" width="16" height="12" rx="2" stroke="#D4000E" stroke-width="1.4"/><path d="M3 9h16" stroke="#D4000E" stroke-width="1.4"/><path d="M7 13h3" stroke="#D4000E" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="app-method-info">
+              <div class="app-method-name">交通银行储蓄卡</div>
+              <div class="app-method-desc">免绑卡直接支付</div>
+            </div>
+            <div class="app-method-radio" id="radioCmb"></div>
+          </div>
+        </div>
+        <button class="app-confirm-btn fade-up" style="animation-delay:0.15s;" onclick="goToBankApp()">确认付款</button>
+        <div class="app-secure">
+          <svg viewBox="0 0 14 14" fill="none"><path d="M7 1.17L2.33 3.5v3.15C2.33 9.72 4.3 12.49 7 13.13c2.7-.64 4.67-3.41 4.67-6.48V3.5L7 1.17z" fill="var(--success)"/><path d="M5.5 7l1.2 1.2L9 5.8" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          腾讯微企付安全支付
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Screen 4: 银行 APP 支付确认 ===== -->
+    <div id="s4" class="screen">
+      <div class="nav-bar" style="background:#D4000E;">
+        <button class="back-btn" onclick="goScreen(3)" style="background:rgba(255,255,255,0.15);"><svg viewBox="0 0 20 20" fill="none"><path d="M12.5 15.5L7 10l5.5-5.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="nav-title" style="color:#fff;">工商银行</div>
+      </div>
+      <div class="bank-app">
+        <div class="bank-app-card fade-up">
+          <div class="bank-payee-label">收款方</div>
+          <div class="bank-payee-name">深圳微企付科技有限公司</div>
+          <div class="bank-app-amount"><span class="bank-yen">¥</span>12,800.00</div>
+        </div>
+        <div class="bank-detail-card fade-up" style="animation-delay:0.08s;">
+          <div class="bank-d-row">
+            <span class="bank-d-label">付款账户</span>
+            <span class="bank-d-value">工商银行 **** 6228</span>
+          </div>
+          <div class="bank-d-row">
+            <span class="bank-d-label">收款账户</span>
+            <span class="bank-d-value">交通银行 **** 1888</span>
+          </div>
+          <div class="bank-d-row">
+            <span class="bank-d-label">交易类型</span>
+            <span class="bank-d-value">扫码转账</span>
+          </div>
+          <div class="bank-d-row">
+            <span class="bank-d-label">备注</span>
+            <span class="bank-d-value">WQF20260429001388</span>
+          </div>
+        </div>
+        <button class="bank-pay-btn fade-up" style="animation-delay:0.15s;" onclick="bankConfirm()">确认付款</button>
+        <div class="bank-pwd-hint">点击后将验证支付密码</div>
+        <div class="app-secure" style="margin-top:auto;">
+          <svg viewBox="0 0 14 14" fill="none"><path d="M7 1.17L2.33 3.5v3.15C2.33 9.72 4.3 12.49 7 13.13c2.7-.64 4.67-3.41 4.67-6.48V3.5L7 1.17z" fill="#D4000E"/><path d="M5.5 7l1.2 1.2L9 5.8" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          中国工商银行安全支付
+        </div>
+      </div>
+      <!-- 银行APP密码弹窗 -->
+      <div class="pwd-modal" id="bankPwdModal">
+        <div class="pwd-sheet" style="border-top:3px solid #D4000E;">
+          <div class="pwd-sheet-title">请输入支付密码</div>
+          <div class="pwd-sheet-amount">¥ 12,800.00</div>
+          <div class="pwd-dots" id="bankPwdDots">
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+          </div>
+          <div style="text-align:center;font-size:12px;color:var(--text-3);">正在自动输入密码...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Screen 5: 支付成功 ===== -->
+    <div id="s5" class="screen">
+      <div class="nav-bar">
+        <div class="nav-title" style="text-align:center;">支付结果</div>
+      </div>
+      <div class="success-body">
+        <div class="success-icon">
+          <svg viewBox="0 0 36 36" fill="none"><path d="M10 18l6 6 10-12" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="success-title">支付成功</div>
+        <div class="success-amount"><span class="s-yen">¥</span>12,800.00</div>
+        <div class="success-merchant">深圳微企付科技有限公司</div>
+        <button class="success-done-btn" onclick="resetDemo()">返回重新体验</button>
+      </div>
+    </div>
+
+    <!-- ===== Screen 6: 对公转账 ===== -->
+    <div id="s6" class="screen">
+      <div class="nav-bar">
+        <button class="back-btn" onclick="goScreen(1)"><svg viewBox="0 0 20 20" fill="none"><path d="M12.5 15.5L7 10l5.5-5.5" stroke="var(--text-1)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="nav-title">收款通</div>
+        <div class="nav-right" style="display:flex;align-items:center;gap:4px;">
+          <span style="width:5px;height:5px;border-radius:50%;background:var(--success);display:inline-block;"></span>
+          待汇款
+        </div>
+      </div>
+      <div class="bank-transfer">
+        <div class="bt-notice">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M8 1.333A6.667 6.667 0 1 0 14.667 8 6.674 6.674 0 0 0 8 1.333ZM8 11a.667.667 0 1 1 0-1.333A.667.667 0 0 1 8 11Zm.667-3.333a.667.667 0 0 1-1.334 0V4.667a.667.667 0 0 1 1.334 0v3Z" fill="currentColor"/></svg>
+          <span class="bt-notice-text">请使用<strong>对公账户</strong>向以下收款账号汇款，金额必须一致，系统将自动识别来账完成核销。</span>
+        </div>
+        <div class="bt-amount-card fade-up">
+          <div class="bt-amount-label">汇款金额（请精确到分）</div>
+          <div class="bt-amount-val"><span class="bt-yen">¥</span>12,800.00</div>
+        </div>
+        <div class="bt-info-card fade-up" style="animation-delay:0.08s;">
+          <div class="bt-row">
+            <span class="bt-label">收款户名</span>
+            <div class="bt-val-group">
+              <span class="bt-val">深圳微企付科技有限公司</span>
+              <button class="bt-copy" onclick="doCopy('深圳微企付科技有限公司',this)">复制</button>
+            </div>
+          </div>
+          <div class="bt-row">
+            <span class="bt-label">收款账号</span>
+            <div class="bt-val-group">
+              <span class="bt-val mono">7559 3188 0260 0501 888</span>
+              <button class="bt-copy" onclick="doCopy('755931880260501888',this)">复制</button>
+            </div>
+          </div>
+          <div class="bt-row">
+            <span class="bt-label">开户银行</span>
+            <div class="bt-val-group">
+              <span class="bt-val">交通银行深圳香蜜支行</span>
+              <button class="bt-copy" onclick="doCopy('交通银行深圳香蜜支行',this)">复制</button>
+            </div>
+          </div>
+          <div class="bt-row">
+            <span class="bt-label">联行号</span>
+            <div class="bt-val-group">
+              <span class="bt-val mono">3085 8400 0156</span>
+              <button class="bt-copy" onclick="doCopy('308584000156',this)">复制</button>
+            </div>
+          </div>
+          <div class="bt-row">
+            <span class="bt-label">汇款备注</span>
+            <div class="bt-val-group">
+              <span class="bt-val mono">WQF20260429001388</span>
+              <button class="bt-copy" onclick="doCopy('WQF20260429001388',this)">复制</button>
+            </div>
+          </div>
+        </div>
+        <button class="bt-copy-all" onclick="copyAllBank()">一键复制全部收款信息</button>
+
+        <!-- 切换到企业手机银行 -->
+        <button class="bt-switch-bank" onclick="goToEbank()">
+          <svg viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="12" rx="2" stroke="#fff" stroke-width="1.4"/><path d="M2 8h16" stroke="#fff" stroke-width="1.4"/><path d="M6 12h4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>
+          切换到企业手机银行转账
+        </button>
+        <div class="bt-switch-hint">复制信息后，切换到银行 APP 完成转账（自动演示）</div>
+
+        <div class="bt-notes">
+          <p class="bt-note">汇款金额必须与订单金额完全一致</p>
+          <p class="bt-note">请在备注中填写订单编号，便于系统识别</p>
+          <p class="bt-note">汇款后系统自动识别来账，完成认款</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Screen 7: 企业手机银行转账动效 ===== -->
+    <div id="s7" class="screen">
+      <div class="nav-bar" style="background:#C92B2E;">
+        <button class="back-btn" onclick="goScreen(6)" style="background:rgba(255,255,255,0.15);"><svg viewBox="0 0 20 20" fill="none"><path d="M12.5 15.5L7 10l5.5-5.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="nav-title" style="color:#fff;">企业网银转账</div>
+        <div class="nav-right" style="color:rgba(255,255,255,0.7);">工商银行</div>
+      </div>
+      <div class="ebank-body">
+        <div class="ebank-form" style="margin-top:12px;">
+          <div class="ebank-field">
+            <div class="ebank-field-label">收款户名</div>
+            <div class="ebank-field-input" id="eb-name"><span class="typing-cursor"></span></div>
+          </div>
+          <div class="ebank-field">
+            <div class="ebank-field-label">收款账号</div>
+            <div class="ebank-field-input mono" id="eb-account"><span class="typing-cursor" style="display:none;"></span></div>
+          </div>
+          <div class="ebank-field">
+            <div class="ebank-field-label">开户银行</div>
+            <div class="ebank-field-input" id="eb-bank"><span class="typing-cursor" style="display:none;"></span></div>
+          </div>
+          <div class="ebank-field">
+            <div class="ebank-field-label">转账金额</div>
+            <div class="ebank-field-input mono" id="eb-amount" style="font-size:24px;font-weight:700;"><span class="typing-cursor" style="display:none;"></span></div>
+          </div>
+          <div class="ebank-field">
+            <div class="ebank-field-label">备注/附言</div>
+            <div class="ebank-field-input mono" id="eb-remark"><span class="typing-cursor" style="display:none;"></span></div>
+          </div>
+        </div>
+        <button class="ebank-submit-btn" id="ebankSubmit">确认转账</button>
+        <div class="app-secure" style="margin-top:auto;">
+          <svg viewBox="0 0 14 14" fill="none"><path d="M7 1.17L2.33 3.5v3.15C2.33 9.72 4.3 12.49 7 13.13c2.7-.64 4.67-3.41 4.67-6.48V3.5L7 1.17z" fill="#C92B2E"/><path d="M5.5 7l1.2 1.2L9 5.8" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          中国工商银行企业网银
+        </div>
+      </div>
+      <!-- 密码弹窗 -->
+      <div class="pwd-modal" id="pwdModal">
+        <div class="pwd-sheet">
+          <div class="pwd-sheet-title">插入 U 盾，输入交易密码</div>
+          <div class="pwd-sheet-amount">¥ 12,800.00</div>
+          <div class="pwd-dots" id="pwdDots">
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+            <div class="pwd-dot"></div>
+          </div>
+          <div style="text-align:center;font-size:12px;color:var(--text-3);">正在自动输入密码...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Screen 8: 自动认款 → 支付结果页 ===== -->
+    <div id="s8" class="screen">
+      <div class="nav-bar" id="s8nav">
+        <div class="nav-title" style="text-align:center;">
+          <img src="wqf-icon.png" style="width:18px;height:18px;border-radius:4px;vertical-align:-3px;margin-right:4px;">
+          <span id="s8navTitle">微企付 · 来账识别</span>
+        </div>
+      </div>
+
+      <!-- 阶段1: 认款进度动画 -->
+      <div class="verify-body" id="verifyPhase">
+        <div style="font-size:14px;color:var(--text-2);font-weight:500;margin-bottom:4px;">订单 WQF20260429001388</div>
+        <div style="font-size:12px;color:var(--text-3);" id="verifySubtitle">系统正在自动识别来账...</div>
+
+        <div class="verify-progress" id="verifyProgress">
+          <div class="verify-step" id="vs1">
+            <div class="verify-dot" id="vd1"></div>
+            <div class="verify-text">
+              <div class="verify-title">银行转账已提交</div>
+              <div class="verify-desc">企业网银转账 ¥12,800.00</div>
+            </div>
+          </div>
+          <div class="verify-line" id="vl1"></div>
+          <div class="verify-step" id="vs2">
+            <div class="verify-dot" id="vd2"></div>
+            <div class="verify-text">
+              <div class="verify-title">收款账户到账</div>
+              <div class="verify-desc">交通银行 **** 1888</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="verify-result-card" id="verifyResult">
+          <div class="verify-result-title">
+            <svg viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="10" fill="var(--success)"/><path d="M7 11l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            认款成功
+          </div>
+          <div class="verify-result-amount"><span class="vr-yen">¥</span>12,800.00</div>
+          <div class="verify-result-desc">对公转账已到账，订单已自动完成核销</div>
+        </div>
+
+        <div id="verifyRefreshHint" style="margin-top:16px;font-size:12px;color:var(--text-3);opacity:0;transition:opacity 0.5s;">页面即将刷新...</div>
+      </div>
+
+      <!-- 阶段2: 微企付支付结果页（干净终态） -->
+      <div class="success-body" id="resultPhase" style="display:none;">
+        <div class="success-icon">
+          <svg viewBox="0 0 36 36" fill="none"><path d="M10 18l6 6 10-12" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="success-title">支付成功</div>
+        <div class="success-amount"><span class="s-yen">¥</span>12,800.00</div>
+        <div class="success-merchant" style="margin-bottom:24px;">深圳微企付科技有限公司</div>
+
+        <!-- 支付详情卡片 -->
+        <div style="width:100%;background:var(--bg);border-radius:var(--radius);padding:16px 20px;">
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);">
+            <span style="font-size:13px;color:var(--text-3);">支付方式</span>
+            <span style="font-size:13px;color:var(--text-1);font-weight:500;">对公转账</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);">
+            <span style="font-size:13px;color:var(--text-3);">付款账户</span>
+            <span style="font-size:13px;color:var(--text-1);font-weight:500;">工商银行 **** 6228</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);">
+            <span style="font-size:13px;color:var(--text-3);">订单编号</span>
+            <span style="font-size:13px;color:var(--text-1);font-weight:500;font-family:var(--mono);">WQF20260429001388</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;">
+            <span style="font-size:13px;color:var(--text-3);">完成时间</span>
+            <span style="font-size:13px;color:var(--text-1);font-weight:500;" id="resultTime">2026-04-29 11:32:18</span>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-top:24px;width:100%;">
+          <button class="success-done-btn" style="flex:1;margin:0;padding:0 16px;" onclick="resetDemo()">返回重新体验</button>
+        </div>
+
+        <div style="margin-top:auto;padding:16px 0;text-align:center;font-size:12px;color:var(--text-3);display:flex;align-items:center;justify-content:center;gap:4px;">
+          <svg viewBox="0 0 14 14" fill="none" style="width:14px;height:14px;"><path d="M7 1.17L2.33 3.5v3.15C2.33 9.72 4.3 12.49 7 13.13c2.7-.64 4.67-3.41 4.67-6.48V3.5L7 1.17z" fill="var(--success)"/><path d="M5.5 7l1.2 1.2L9 5.8" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          由腾讯微企付提供安全支付服务
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// ==================== 状态 ====================
+let currentScreen = 0;
+let payMode = 'wqf'; // 'wqf' | 'bank'
+let selectedBank = 'icbc';
+
+// ==================== 时间 ====================
+const now = new Date();
+document.getElementById('statusTime').textContent =
+  String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+
+// ==================== 倒计时 ====================
+let mainSec = 30 * 60 - 1;
+let qrSec = 5 * 60 - 1;
+function fmt(s) { return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); }
+setInterval(() => {
+  if (mainSec > 0) { mainSec--; const e = document.getElementById('xhsCountdown'); if(e) e.textContent = fmt(mainSec); }
+  if (qrSec > 0) { qrSec--; const e = document.getElementById('qrCountdown'); if(e) e.textContent = fmt(qrSec); }
+}, 1000);
+
+// ==================== 切屏 ====================
+function goScreen(n) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById('s' + n);
+  if (target) { target.classList.add('active'); currentScreen = n; }
+  // 流程条映射：s0→step0, s1→step1, s2→step2, s3→step3, s4→step4, s5→step5
+  const flowMap = { 0:0, 1:1, 2:2, 3:3, 4:4, 5:5, 6:1, 7:1, 8:5 };
+  updateFlow(flowMap[n] !== undefined ? flowMap[n] : 0);
+  if (n === 2) generateQR();
+}
+
+function showLoading(text, cb, delay) {
+  const ov = document.getElementById('loading');
+  document.getElementById('loadingText').textContent = text || '正在跳转...';
+  ov.classList.add('show');
+  setTimeout(() => { ov.classList.remove('show'); if (cb) cb(); }, delay || 1200);
+}
+
+// ==================== 流程条（6步：0-5）====================
+function updateFlow(step) {
+  for (let i = 0; i <= 5; i++) {
+    const dot = document.getElementById('fd' + i);
+    const label = document.getElementById('fl' + i);
+    if (!dot || !label) continue;
+    dot.classList.remove('active', 'done');
+    label.classList.remove('active', 'done');
+    if (i < step) { dot.classList.add('done'); dot.textContent = '✓'; label.classList.add('done'); }
+    else if (i === step) { dot.classList.add('active'); dot.textContent = (i+1); label.classList.add('active'); }
+    else { dot.textContent = (i+1); }
+  }
+  for (let i = 0; i <= 4; i++) {
+    const line = document.getElementById('fline' + i);
+    if (line) line.classList.toggle('done', i < step);
+  }
+}
+
+// ==================== 商品下单 ====================
+function submitOrder() {
+  showLoading('正在提交订单...', () => goScreen(1), 900);
+}
+
+// ==================== 小红书收银台 ====================
+function selectPay(mode) {
+  payMode = mode;
+  document.getElementById('optWqf').classList.toggle('selected', mode === 'wqf');
+  document.getElementById('optBank').classList.toggle('selected', mode === 'bank');
+  document.getElementById('optBank').classList.toggle('xhs-bank', mode === 'bank');
+  const btn = document.getElementById('xhsConfirmBtn');
+  if (mode === 'wqf') { btn.className = 'xhs-confirm-btn wqf-btn'; btn.textContent = '确认支付'; }
+  else { btn.className = 'xhs-confirm-btn bank-btn'; btn.textContent = '确认支付'; }
+}
+
+function confirmPay() {
+  if (payMode === 'wqf') {
+    showLoading('正在生成付款码...', () => goScreen(2), 800);
+  } else {
+    showLoading('正在获取收款通信息...', () => goScreen(6), 800);
+  }
+}
+
+// ==================== 二维码 ====================
+function generateQR() {
+  const canvas = document.getElementById('qrCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const size = 400, modules = 33, cell = size / modules;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#1D2129';
+  function seeded(s) { let x = Math.sin(s) * 10000; return x - Math.floor(x); }
+  function finder(ox, oy) {
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++)
+      if (r===0||r===6||c===0||c===6||(r>=2&&r<=4&&c>=2&&c<=4))
+        ctx.fillRect((ox+c)*cell,(oy+r)*cell,cell,cell);
+  }
+  finder(0,0); finder(modules-7,0); finder(0,modules-7);
+  for (let i = 8; i < modules-8; i++) if(i%2===0) {
+    ctx.fillRect(i*cell,6*cell,cell,cell);
+    ctx.fillRect(6*cell,i*cell,cell,cell);
+  }
+  for (let r = 0; r < modules; r++) for (let c = 0; c < modules; c++) {
+    if ((r<9&&c<9)||(r<9&&c>modules-9)||(r>modules-9&&c<9)) continue;
+    if (r===6||c===6) continue;
+    if (Math.abs(r-modules/2)<4&&Math.abs(c-modules/2)<4) continue;
+    if (seeded(r*modules+c+42)>0.5) ctx.fillRect(c*cell,r*cell,cell,cell);
+  }
+}
+
+function scanQR() {
+  showLoading('正在拉起微企付 APP...', () => goScreen(3), 1000);
+}
+
+// ==================== 微企付 APP ====================
+function selectBank(bank) {
+  selectedBank = bank;
+  document.getElementById('radioIcbc').classList.toggle('checked', bank === 'icbc');
+  document.getElementById('radioCmb').classList.toggle('checked', bank === 'cmb');
+}
+
+function goToBankApp() {
+  const bankName = selectedBank === 'icbc' ? '工商银行' : '交通银行';
+  showLoading('正在跳转' + bankName + ' APP...', () => goScreen(4), 1200);
+}
+
+// ==================== 银行 APP ====================
+function bankConfirm() {
+  // 弹出密码输入弹窗
+  const modal = document.getElementById('bankPwdModal');
+  modal.classList.add('show');
+
+  // 自动填充密码点
+  const dots = document.querySelectorAll('#bankPwdDots .pwd-dot');
+  dots.forEach(d => d.classList.remove('filled'));
+  dots.forEach((d, i) => {
+    setTimeout(() => { d.classList.add('filled'); }, 400 + i * 300);
+  });
+
+  // 6个点全填完后跳转
+  setTimeout(() => {
+    modal.classList.remove('show');
+    showLoading('正在验证支付密码...', () => { goScreen(5); }, 1000);
+  }, 400 + 6 * 300 + 500);
+}
+
+// ==================== 重置 ====================
+function resetDemo() {
+  goScreen(0);
+  payMode = 'wqf';
+  selectPay('wqf');
+  mainSec = 30 * 60 - 1;
+  qrSec = 5 * 60 - 1;
+}
+
+// ==================== Toast / 复制 ====================
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+function doCopy(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (btn) { btn.textContent = '已复制'; btn.classList.add('copied'); setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('copied'); }, 1500); }
+    showToast('已复制到剪贴板');
+  }).catch(() => {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('已复制到剪贴板');
+  });
+}
+
+function copyAllBank() {
+  const info = '收款户名：深圳微企付科技有限公司\n收款账号：755931880260501888\n开户银行：交通银行深圳香蜜支行\n联行号：308584000156\n汇款备注：WQF20260429001388\n汇款金额：¥12,800.00';
+  navigator.clipboard.writeText(info).then(() => showToast('全部信息已复制')).catch(() => showToast('复制失败'));
+}
+
+// ==================== 企业手机银行转账动效 ====================
+let ebankAnimTimer = null;
+
+function goToEbank() {
+  showLoading('正在切换到企业手机银行...', () => {
+    goScreen(7);
+    // 延迟一点启动自动填写动效
+    setTimeout(startEbankAnim, 600);
+  }, 1000);
+}
+
+function startEbankAnim() {
+  // 清理之前的动画
+  if (ebankAnimTimer) clearTimeout(ebankAnimTimer);
+
+  // 重置表单
+  const fields = [
+    { id: 'eb-name', text: '深圳微企付科技有限公司', delay: 0 },
+    { id: 'eb-account', text: '7559 3188 0260 0501 888', delay: 1800 },
+    { id: 'eb-bank', text: '交通银行深圳香蜜支行', delay: 3400 },
+    { id: 'eb-amount', text: '¥ 12,800.00', delay: 5000 },
+    { id: 'eb-remark', text: 'WQF20260429001388', delay: 6400 },
+  ];
+
+  // 清空所有字段
+  fields.forEach(f => {
+    const el = document.getElementById(f.id);
+    el.innerHTML = '';
+  });
+
+  // 隐藏提交按钮高亮
+  document.getElementById('ebankSubmit').classList.remove('ready');
+
+  // 逐个字段做打字 + 粘贴动效
+  fields.forEach((field, idx) => {
+    ebankAnimTimer = setTimeout(() => {
+      typeInField(field.id, field.text, idx === fields.length - 1);
+    }, field.delay);
+  });
+}
+
+function typeInField(fieldId, text, isLast) {
+  const el = document.getElementById(fieldId);
+  el.innerHTML = '<span class="typing-cursor"></span>';
+
+  // 先显示"粘贴"气泡
+  setTimeout(() => {
+    el.innerHTML = '<span class="typing-cursor"></span><span class="paste-badge show">已粘贴</span>';
+  }, 200);
+
+  // 然后逐字打出来
+  let charIdx = 0;
+  const typeInterval = setInterval(() => {
+    if (charIdx < text.length) {
+      const displayed = text.substring(0, charIdx + 1);
+      el.innerHTML = displayed + '<span class="typing-cursor"></span>';
+      charIdx++;
+    } else {
+      clearInterval(typeInterval);
+      // 打完了，去掉光标
+      el.innerHTML = text;
+
+      // 如果是最后一个字段，激活提交按钮并自动点击
+      if (isLast) {
+        setTimeout(() => {
+          const btn = document.getElementById('ebankSubmit');
+          btn.classList.add('ready');
+          // 自动点击提交
+          setTimeout(() => {
+            showPwdModal();
+          }, 800);
+        }, 400);
+      }
+    }
+  }, 50); // 每个字50ms
+}
+
+function showPwdModal() {
+  const modal = document.getElementById('pwdModal');
+  modal.classList.add('show');
+
+  // 自动填充密码点
+  const dots = document.querySelectorAll('#pwdDots .pwd-dot');
+  dots.forEach((d, i) => {
+    setTimeout(() => {
+      d.classList.add('filled');
+    }, 300 + i * 280);
+  });
+
+  // 6个点全填完后提交
+  setTimeout(() => {
+    modal.classList.remove('show');
+    showLoading('正在提交转账...', () => {
+      showToast('转账已提交');
+      // 切到认款流程
+      setTimeout(() => {
+        showLoading('正在返回微企付...', () => {
+          goScreen(8);
+          startVerifyAnim();
+        }, 800);
+      }, 600);
+    }, 1200);
+  }, 300 + 6 * 280 + 500);
+}
+
+// ==================== 自动认款动效 ====================
+function startVerifyAnim() {
+  // 显示阶段1，隐藏阶段2
+  document.getElementById('verifyPhase').style.display = '';
+  document.getElementById('resultPhase').style.display = 'none';
+  document.getElementById('s8navTitle').textContent = '微企付 · 来账识别';
+  document.getElementById('verifySubtitle').textContent = '系统正在自动识别来账...';
+  document.getElementById('verifyRefreshHint').style.opacity = '0';
+
+  // 重置状态
+  for (let i = 1; i <= 2; i++) {
+    const step = document.getElementById('vs' + i);
+    const dot = document.getElementById('vd' + i);
+    step.classList.remove('active', 'done');
+    dot.classList.remove('processing', 'ok');
+    dot.innerHTML = '';
+  }
+  document.getElementById('vl1').classList.remove('done');
+  document.getElementById('verifyResult').classList.remove('show');
+
+  const steps = [
+    { stepId: 'vs1', dotId: 'vd1', lineId: null, delay: 400 },
+    { stepId: 'vs2', dotId: 'vd2', lineId: 'vl1', delay: 2200 },
+  ];
+
+  steps.forEach((s, idx) => {
+    // 开始处理
+    setTimeout(() => {
+      const step = document.getElementById(s.stepId);
+      const dot = document.getElementById(s.dotId);
+      step.classList.add('active');
+      dot.classList.add('processing');
+    }, s.delay);
+
+    // 完成（1秒后）
+    setTimeout(() => {
+      const step = document.getElementById(s.stepId);
+      const dot = document.getElementById(s.dotId);
+      step.classList.add('done');
+      dot.classList.remove('processing');
+      dot.classList.add('ok');
+      if (s.lineId) {
+        document.getElementById(s.lineId).classList.add('done');
+      }
+
+      // 最后一步完成后展示认款成功卡片
+      if (idx === steps.length - 1) {
+        setTimeout(() => {
+          document.getElementById('verifyResult').classList.add('show');
+          document.getElementById('verifySubtitle').textContent = '来账识别完成';
+
+          // 2秒后自动刷新为支付结果页
+          setTimeout(() => {
+            document.getElementById('verifyRefreshHint').style.opacity = '1';
+            setTimeout(() => {
+              transitionToResultPage();
+            }, 1200);
+          }, 1500);
+        }, 600);
+      }
+    }, s.delay + 1000);
+  });
+}
+
+// 刷新为微企付支付结果页
+function transitionToResultPage() {
+  // 更新标题
+  document.getElementById('s8navTitle').textContent = '微企付支付结果页';
+
+  // 更新完成时间
+  const now = new Date();
+  const timeStr = now.getFullYear() + '-' +
+    String(now.getMonth()+1).padStart(2,'0') + '-' +
+    String(now.getDate()).padStart(2,'0') + ' ' +
+    String(now.getHours()).padStart(2,'0') + ':' +
+    String(now.getMinutes()).padStart(2,'0') + ':' +
+    String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('resultTime').textContent = timeStr;
+
+  // 切换阶段
+  document.getElementById('verifyPhase').style.display = 'none';
+  document.getElementById('resultPhase').style.display = '';
+  document.getElementById('resultPhase').style.animation = 'fadeUp 0.4s cubic-bezier(0.4,0,0.2,1) both';
+}
+
+// Init
+generateQR();
+updateFlow(0);
+</script>
+</body>
+</html>
